@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <title>Logo</title>
+<link rel="icon" id="favicon" type="image/png" href="" />
 <style>
   html, body { margin: 0; height: 100%; background: #fff; font-family: system-ui, sans-serif; }
   body { display: grid; place-items: center; gap: 24px; }
@@ -130,8 +131,9 @@
       const t = ((now - t0) / period) % 1;
       for (let i = 0; i < 3; i++) {
         const w = bumpLoop(t, centers[i], width);
-        state[i].alpha = DIM + (PEAK - DIM) * w;
-        state[i].dx = mode === 'move' ? SLIDE * w : 0;
+        // In 'move' mode keep full opacity; only slide. In 'fade' mode dim non-active bars.
+        state[i].alpha = mode === 'move' ? 1 : DIM + (PEAK - DIM) * w;
+        state[i].dx    = mode === 'move' ? SLIDE * w : 0;
       }
       render();
       rafId = requestAnimationFrame(step);
@@ -173,6 +175,66 @@
 
   btn1.addEventListener('click', () => toggle('fade', btn1, btn2));
   btn2.addEventListener('click', () => toggle('move', btn2, btn1));
+
+  // ---- Animated favicon (fade-only loop, runs continuously) ----
+  const favCanvas = document.createElement('canvas');
+  favCanvas.width = 64;
+  favCanvas.height = 64;
+  const fctx = favCanvas.getContext('2d');
+  const faviconLink = document.getElementById('favicon');
+
+  const FW = favCanvas.width, FH = favCanvas.height;
+  const fBarW = FW * 0.78;
+  const fBarH = FH * 0.20;
+  const fGap  = FH * 0.06;
+  const fTotalH = fBarH * 3 + fGap * 2;
+  const fStartY = (FH - fTotalH) / 2;
+  const fStartX = (FW - fBarW) / 2;
+  const fSmallR = fBarH * 0.18;
+  const fBigR   = fBarH;
+
+  function drawFavBar(x, y, w, h, color, alpha) {
+    fctx.save();
+    fctx.globalAlpha = alpha;
+    fctx.beginPath();
+    fctx.moveTo(x, y);
+    fctx.lineTo(x + w - fSmallR, y);
+    fctx.quadraticCurveTo(x + w, y, x + w, y + fSmallR);
+    fctx.lineTo(x + w, y + h - fSmallR);
+    fctx.quadraticCurveTo(x + w, y + h, x + w - fSmallR, y + h);
+    fctx.lineTo(x + fBigR, y + h);
+    fctx.arc(x + fBigR, y, fBigR, Math.PI / 2, Math.PI, false);
+    fctx.closePath();
+    fctx.fillStyle = color;
+    fctx.fill();
+    fctx.restore();
+  }
+
+  const FAV_PERIOD = 2400;
+  const FAV_FPS = 12;
+  const FAV_CENTERS = [1/6, 3/6, 5/6];
+  const FAV_WIDTH = 0.55;
+  const FAV_SLIDE = FW * 0.08;
+  const fStart = performance.now();
+
+  // setInterval keeps firing in background tabs (clamped to ~1s by the browser),
+  // so the favicon keeps animating even when the tab isn't focused.
+  function tickFavicon() {
+    const now = performance.now();
+    const t = ((now - fStart) / FAV_PERIOD) % 1;
+    const mode = activeMode || 'fade';
+    fctx.clearRect(0, 0, FW, FH);
+    for (let i = 0; i < 3; i++) {
+      const w = bumpLoop(t, FAV_CENTERS[i], FAV_WIDTH);
+      const alpha = mode === 'move' ? 1 : DIM + (PEAK - DIM) * w;
+      const dx    = mode === 'move' ? FAV_SLIDE * w : 0;
+      const y = fStartY + i * (fBarH + fGap);
+      drawFavBar(fStartX + dx, y, fBarW, fBarH, colors[i], alpha);
+    }
+    faviconLink.href = favCanvas.toDataURL('image/png');
+  }
+  setInterval(tickFavicon, 1000 / FAV_FPS);
+  tickFavicon();
 </script>
 </body>
 </html>
