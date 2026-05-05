@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Logo</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; font-family: system-ui, sans-serif; }
+  body { display: grid; place-items: center; gap: 24px; }
+  .wrap { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .buttons { display: flex; gap: 12px; }
+  canvas { display: block; }
+  button {
+    padding: 12px 28px;
+    font-size: 16px;
+    border: none;
+    border-radius: 999px;
+    background: #111;
+    color: #fff;
+    cursor: pointer;
+    transition: transform .15s ease, background .15s ease;
+  }
+  button:hover { background: #333; }
+  button:active { transform: scale(.97); }
+  button.active { background: #4AA3D9; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="logo" width="560" height="560"></canvas>
+  <div class="buttons">
+    <button id="play1">Animate</button>
+    <button id="play2">Animate + Move</button>
+  </div>
+</div>
+<script>
+  const canvas = document.getElementById('logo');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  const barW = W * 0.78;
+  const barH = H * 0.20;
+  const gap  = H * 0.06;
+  const totalH = barH * 3 + gap * 2;
+  const startY = (H - totalH) / 2;
+  const startX = (W - barW) / 2;
+
+  const smallR = barH * 0.18;
+  const bigR   = barH;
+
+  const colors = ['#000000', '#4AA3D9', '#F8B043'];
+
+  // Per-bar state: opacity + horizontal offset
+  const state = colors.map(() => ({ alpha: 1, dx: 0 }));
+
+  function drawBar(x, y, w, h, color, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + w - smallR, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + smallR);
+    ctx.lineTo(x + w, y + h - smallR);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - smallR, y + h);
+    ctx.lineTo(x + bigR, y + h);
+    ctx.arc(x + bigR, y, bigR, Math.PI / 2, Math.PI, false);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    for (let i = 0; i < 3; i++) {
+      const y = startY + i * (barH + gap);
+      drawBar(startX + state[i].dx, y, barW, barH, colors[i], state[i].alpha);
+    }
+  }
+  render();
+
+  // Easing
+  const easeInOut = t => t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+
+  function tween(duration, onFrame) {
+    return new Promise(resolve => {
+      const t0 = performance.now();
+      function step(now) {
+        const t = Math.min(1, (now - t0) / duration);
+        onFrame(easeInOut(t));
+        render();
+        if (t < 1) requestAnimationFrame(step);
+        else resolve();
+      }
+      requestAnimationFrame(step);
+    });
+  }
+
+  function animateTo(targets, duration = 400) {
+    const from = state.map(s => ({ alpha: s.alpha, dx: s.dx }));
+    return tween(duration, t => {
+      for (let i = 0; i < 3; i++) {
+        state[i].alpha = from[i].alpha + (targets[i].alpha - from[i].alpha) * t;
+        state[i].dx    = from[i].dx    + (targets[i].dx    - from[i].dx)    * t;
+      }
+    });
+  }
+
+  const DIM = 0.5;
+  const PEAK = 1.0;
+  const SLIDE = 30; // px of horizontal travel for the highlighted bar
+
+  // Wrap-around smooth bump on a [0,1) circular timeline
+  function bumpLoop(t, center, width) {
+    let d = Math.abs(t - center);
+    d = Math.min(d, 1 - d);
+    d = d / (width / 2);
+    if (d >= 1) return 0;
+    const x = 1 - d;
+    return x * x * (3 - 2 * x);
+  }
+
+  let rafId = null;
+  let activeMode = null; // 'fade' | 'move' | null
+
+  function startLoop(mode, period = 2400) {
+    const t0 = performance.now();
+    const centers = [1/6, 3/6, 5/6];
+    const width = 0.55;
+    function step(now) {
+      const t = ((now - t0) / period) % 1;
+      for (let i = 0; i < 3; i++) {
+        const w = bumpLoop(t, centers[i], width);
+        state[i].alpha = DIM + (PEAK - DIM) * w;
+        state[i].dx = mode === 'move' ? SLIDE * w : 0;
+      }
+      render();
+      rafId = requestAnimationFrame(step);
+    }
+    rafId = requestAnimationFrame(step);
+  }
+
+  function stopLoop() {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+
+  const btn1 = document.getElementById('play1');
+  const btn2 = document.getElementById('play2');
+
+  async function toggle(mode, btn, otherBtn) {
+    if (activeMode === mode) {
+      // Stop current loop
+      stopLoop();
+      activeMode = null;
+      btn.textContent = btn === btn1 ? 'Animate' : 'Animate + Move';
+      btn.classList.remove('active');
+      await animateTo([0,1,2].map(() => ({ alpha: 1, dx: 0 })), 400);
+      return;
+    }
+    // Switching from another running mode (or starting fresh)
+    if (activeMode !== null) {
+      stopLoop();
+      otherBtn.textContent = otherBtn === btn1 ? 'Animate' : 'Animate + Move';
+      otherBtn.classList.remove('active');
+    }
+    activeMode = mode;
+    btn.textContent = 'Stop';
+    btn.classList.add('active');
+    startLoop(mode);
+  }
+
+  btn1.addEventListener('click', () => toggle('fade', btn1, btn2));
+  btn2.addEventListener('click', () => toggle('move', btn2, btn1));
+</script>
+</body>
+</html>
